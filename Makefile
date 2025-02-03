@@ -4,7 +4,7 @@ cont-arith-code:
 all: cont-arith-code
 
 doc:
-	cargo doc --no-deps --open
+	cargo doc --no-deps
 
 release:
 	cargo build --release

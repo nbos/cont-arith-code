@@ -10,8 +10,10 @@ use crate::map::Map;
 
 #[derive(Debug,Clone,PartialEq,PartialOrd)]
 pub struct Categorical<T>{
+    /// Number of observations
     pub count: usize,
-    pub map: Map<T,(usize,f64)> // (symbol, count, log-probability)
+    /// Symbol -> (count, log-probability)
+    pub map: Map<T,(usize,f64)>
 }
 
 impl<T> Categorical<T> {

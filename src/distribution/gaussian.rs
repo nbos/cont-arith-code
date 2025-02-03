@@ -5,7 +5,6 @@ use logaddexp::LogAddExp;
 use crate::*;
 use crate::special;
 use crate::distribution::categorical::TruncatedCategorical;
-use crate::distribution::uniform::floor_rem;
 
 ////////////////////////////// STANDARD NORMAL //////////////////////////////
 
@@ -79,13 +78,20 @@ pub fn lerp(lo: f64, hi: f64, cp: f64) -> f64 {
 ////////////////////////////// PARAMETRIZED //////////////////////////////
 
 #[derive(Debug,Copy,Clone,PartialEq,PartialOrd)]
+/// Numerically stable Gaussian distribution
 pub struct Gaussian {
-    pub s0: usize, // number of values
-    pub s1: i64,   // sum of values
-    pub s2: u128,  // sum of squares
-    pub ddof: u8,  // 0 if values are population, 1 if samples
-    pub mean: f64, // s1 / s0
-    pub stdev: f64 // sqrt( (s2 - (s1^2)/s0) / s0 - ddof )
+    /// Number of values
+    pub s0: usize,
+    /// Sum of values
+    pub s1: i64,
+    /// Sum of squares
+    pub s2: u128,
+    /// `0` if values are population, `1` if sample
+    pub ddof: u8,
+    /// `s1 / s0`
+    pub mean: f64,
+    /// `sqrt( (s2 - (s1^2)/s0) / s0 - ddof )`
+    pub stdev: f64
 }
 
 impl Gaussian {
@@ -402,4 +408,13 @@ impl TruncatedDistribution for TruncatedGaussian {
 
     fn lo(&self) -> i64 { self.lo }
     fn hi(&self) -> i64 { self.hi }
+}
+
+/// Separate the fractional part of a number of the integer part
+pub fn floor_rem(x: f64) -> (i64,f64) {
+    // TODO: rewrite with trunc() and fract() (neg is special case?)
+    let x_floor = x.floor();
+    let x_int = x_floor as i64;
+    if x.is_finite() { (x_int, ((x - x_floor))) }
+    else { (x_int,(0.0)) }
 }
