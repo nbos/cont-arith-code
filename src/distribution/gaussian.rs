@@ -1,6 +1,8 @@
 use std::f64::consts::*;
 
+use libm::erf;
 use logaddexp::LogAddExp;
+use statrs::function::erf::erf_inv;
 
 use crate::*;
 use crate::special;
@@ -46,7 +48,7 @@ pub fn log_probability(mut lo: f64, mut hi: f64) -> f64 {
 
 /// Quantile of the standard normal
 pub fn quantile(cp: f64) -> f64 {
-    SQRT_2 * statrs::function::erf::erf_inv(2.0 * cp - 1.0)
+    SQRT_2 * erf_inv(2.0 * cp - 1.0)
 }
 
 /// Quantile-exp (inverse of the log-CDF) of the standard normal
@@ -152,7 +154,7 @@ impl Gaussian {
 	if self.stdev > 0.0 {
 	    let delta = x - self.mean;
 	    let denom = self.stdev * SQRT_2;
-	    (0.5) * (1.0 + libm::erf(delta/denom))
+	    (0.5) * (1.0 + erf(delta/denom))
 	} else if x >= self.mean {
 	    1.0
 	} else {
@@ -291,8 +293,8 @@ pub struct TruncatedGaussian {
 // as you would expect and we can call gaussian::log_probability as you
 // would expect, etc.
 impl TruncatedDistribution for TruncatedGaussian {
-    fn lookup(&self, cp: f64) -> (i64, f64) {
-	let (case, case_split) = self.bins.lookup(cp);
+    fn quantile(&self, cp: f64) -> (i64, f64) {
+	let (case, case_split) = self.bins.quantile(cp);
 	if      case == 0 { (self.lo, case_split) }
 	else if case == 2 { (self.hi, case_split) }
 	else { // mid
@@ -300,11 +302,11 @@ impl TruncatedDistribution for TruncatedGaussian {
 	    let lo = (self.lo + 1) as f64;
 	    let hi = self.hi as f64;
 	    let lerp = self.gaussian.lerp(lo,hi,case_split);
-	    let (mut s, mut s_split) = floor_rem(lerp);
+	    let (mut s, mut s_rem) = floor_rem(lerp);
 
 	    let progress =
 		( s > self.lo + 1 || (s == self.lo + 1
-					    && s_split > 0.0) )
+					    && s_rem > 0.0) )
 		&& s < self.hi;
 
 	    if !progress && cp == 0.5 {
@@ -314,17 +316,17 @@ impl TruncatedDistribution for TruncatedGaussian {
 		let inc = case_split * delta as f64;
 		let inc_floor = inc.floor();
 		s = self.lo + 1 + inc_floor as i64;
-		s_split = inc - inc_floor;
+		s_rem = inc - inc_floor;
 	    }
 
-	    (s, s_split)
+	    (s, s_rem)
 	}
     }
 
-    fn truncate(&mut self, cp: f64, s: i64, s_split: f64, bit: bool) {
+    fn truncate(&mut self, cp: f64, s: i64, s_rem: f64, bit: bool) {
 	if s == self.lo { // lo
 	    if bit {
-		self.bins.ln_ps[0] += (1.0 - s_split).ln();
+		self.bins.ln_ps[0] += (1.0 - s_rem).ln();
 		self.bins.normalize();
 	    } else { // solved
 		self.hi = self.lo;
@@ -343,7 +345,7 @@ impl TruncatedDistribution for TruncatedGaussian {
 		self.bins.ln_ps[2] = 0.0;
 
 	    } else {
-		self.bins.ln_ps[2] += s_split.ln();
+		self.bins.ln_ps[2] += s_rem.ln();
 		self.bins.normalize();
 	    }
 
@@ -375,7 +377,7 @@ impl TruncatedDistribution for TruncatedGaussian {
 		self.ln_prob += lccp;
 		hi_bin = self.bins.ln_ps[2] - lccp; // just scale
 		lo_bin = s_lp // absolute log-prob
-		    + (1.0 - s_split).ln() // fraction
+		    + (1.0 - s_rem).ln() // fraction
 		    - self.ln_prob; // re-base
 		debug_assert!(lo_bin > f64::NEG_INFINITY);
 	    } else {
@@ -384,9 +386,9 @@ impl TruncatedDistribution for TruncatedGaussian {
 		self.ln_prob += lcp;
 		lo_bin = self.bins.ln_ps[0] - lcp; // just scale
 		hi_bin = s_lp // absolute lp
-		    + s_split.ln() // fraction
+		    + s_rem.ln() // fraction
 		    - self.ln_prob; // re-base
-		debug_assert!(hi_bin > f64::NEG_INFINITY || s_split == 0.0);
+		debug_assert!(hi_bin > f64::NEG_INFINITY || s_rem == 0.0);
 	    }
 
 	    let mid_bin = if self.lo + 1 == self.hi {

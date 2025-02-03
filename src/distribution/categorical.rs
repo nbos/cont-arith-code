@@ -176,7 +176,7 @@ impl TruncatedDistribution for TruncatedCategorical {
     /// (as a ratio) the cummulative probability falls within that
     /// bin. Ratio on lo and hi bounds are counted relative to their
     /// respective prior split.
-    fn lookup(&self, cp: f64) -> (i64, f64) {
+    fn quantile(&self, cp: f64) -> (i64, f64) {
 	// compute cummulative probabilities
 	let ps = self.ln_ps.iter()
 	    .map(|lp| (lp.exp())) // lin space
@@ -191,17 +191,17 @@ impl TruncatedDistribution for TruncatedCategorical {
 	// find split-point
 	let s = cps.partition_point(|&cp1| cp1 <= cp); // [ )[ )|[ )[ )[ )
 	let s_lo = if s == 0 { 0.0 } else { cps[s - 1] };
-	let s_split = (cp - s_lo) / (scale * ps[s]);
+	let s_rem = (cp - s_lo) / (scale * ps[s]);
 
-	((s + self.lo) as i64, s_split)
+	((s + self.lo) as i64, s_rem)
     }
 
-    fn truncate(&mut self, cp: f64, s: i64, s_split: f64, bit: bool) {
+    fn truncate(&mut self, cp: f64, s: i64, s_rem: f64, bit: bool) {
 	let i = s as usize - self.lo; // actual index
 	if bit { // 1
 	    self.lo += i;
 	    self.ln_ps = self.ln_ps[i..].to_vec();
-	    self.ln_ps[0] += (1.0 - s_split).ln();
+	    self.ln_ps[0] += (1.0 - s_rem).ln();
 	    let lccp = (1.0 - cp).ln();
 	    for lp in self.ln_ps.iter_mut() {
 		*lp -= lccp;
@@ -209,7 +209,7 @@ impl TruncatedDistribution for TruncatedCategorical {
 
 	} else { // 0
 	    self.ln_ps.truncate(i+1); // keep ln_ps[s]
-	    *self.ln_ps.last_mut().unwrap() += s_split.ln();
+	    *self.ln_ps.last_mut().unwrap() += s_rem.ln();
 	    self.trim_right(); // required when you hit a bound with 0s
 	    let lcp = cp.ln();
 	    for lp in self.ln_ps.iter_mut() {

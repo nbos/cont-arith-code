@@ -1,4 +1,6 @@
 use std::f64::consts::*;
+
+use libm::expm1;
 use errorfunctions::*;
 
 /// Copied from `scipy/scipy/special/_faddeeva.cxx` which is their
@@ -381,7 +383,7 @@ pub const LOG1P_MEXP_MTWO: f64 = -0.14541345786885906;
 pub fn ndtri_exp(y: f64) -> f64 {
     if y < -f64::MAX { f64::NEG_INFINITY }
     else if y < -2.0 { ndtri_exp_small_y(y) }
-    else if y > LOG1P_MEXP_MTWO { -ndtri(-libm::expm1(y)) }
+    else if y > LOG1P_MEXP_MTWO { -ndtri(-expm1(y)) }
     else { ndtri(y.exp()) }
 }
 
@@ -412,6 +414,6 @@ pub fn ln1mexp(x:f64) -> f64 {
     if x < LOGHALF {
 	(-x.exp()).ln_1p()
     } else {
-	(-libm::expm1(x)).ln()
+	(-expm1(x)).ln()
     }
 }

@@ -56,12 +56,12 @@ pub trait TruncatedDistribution {
     /// probability mass. Returns whole index (i64) and remainder (f64
     /// $\in$ [0-1]) whose sum has the given cummulative probability in
     /// the truncated CDF.
-    fn lookup(&self, cp: f64) -> (Index, f64); // returns (s, s_split)
+    fn quantile(&self, cp: f64) -> (Index, f64); // returns (s, s_rem)
     /// Split the remaining probability mass with the given bit
     /// (false:0:left :: true:1:right) at the given cummulative
     /// probability, which we already know splits at index `s` with
-    /// remainder `s_split`.
-    fn truncate(&mut self, cp: f64, s: Index, s_split: f64, bit: bool);
+    /// remainder `s_rem`.
+    fn truncate(&mut self, cp: f64, s: Index, s_rem: f64, bit: bool);
     /// Return the index of the lower-bound of the interval of the
     /// truncation.
     fn lo(&self) -> Index;
@@ -113,19 +113,19 @@ impl<'a> Iterator for Encoder<'a> {
 	while let Some((target, distr)) =
 	    head_iter.next().or_else(|| self.tail.next()) // chain head + tail
 	{
-	    let (s, s_split) = distr.lookup(cp);
-	    stack.push((target, distr, cp, s, s_split));
+	    let (s, s_rem) = distr.quantile(cp);
+	    stack.push((target, distr, cp, s, s_rem));
 
 	    if s != target {
 		res = Some(target > s); // 0:false :: 1:true
 		break
 
-	    } else if s_split == 0.0 { // edge case
+	    } else if s_rem == 0.0 { // edge case
 		res = Some(true);
 		break
 
 	    } else {
-		cp = s_split; // next cp is where cp falls within s/target
+		cp = s_rem; // next cp is where cp falls within s/target
 		// continue
 	    }
 	}
@@ -134,8 +134,8 @@ impl<'a> Iterator for Encoder<'a> {
 	let bit = res.unwrap_or(cp < 0.5); // None iff end of data
 
 	// split distributions on the stack
-	for (target, mut cat, cp, s, s_split) in stack {
-	    cat.truncate(cp, s, s_split, bit);
+	for (target, mut cat, cp, s, s_rem) in stack {
+	    cat.truncate(cp, s, s_rem, bit);
 	    if !cat.is_resolved() { self.head.push((target,cat)) }
 	}
 
@@ -214,21 +214,21 @@ where
 	let half = 0.5;
 	while !self.distr.is_resolved() {
 
-	    let (s, s_split) = self.distr.lookup(half);
+	    let (s, s_rem) = self.distr.quantile(half);
 	    self.last_bit = self.code.next()
 		.expect("Bitstream ended before a value was decoded");
 
 	    if self.last_bit {
 		// distr's lo gets moved up one half
 		if s != self.distr.lo() { self.lo_splits = vec![] }
-		self.lo_splits.push(s_split);
+		self.lo_splits.push(s_rem);
 	    } else {
 		// distr's hi gets moved down
 		if s != self.distr.hi() { self.hi_splits = vec![] }
-		self.hi_splits.push(s_split);
+		self.hi_splits.push(s_rem);
 	    }
 
-	    self.distr.truncate(half, s, s_split, self.last_bit);
+	    self.distr.truncate(half, s, s_rem, self.last_bit);
 	}
 
 	// resolved
@@ -245,33 +245,33 @@ where
 	if self.last_bit {
 	    // 0s first
 	    for cp in mem::take(&mut self.hi_splits) {
-		let (s, s_split) = self.distr.lookup(cp);
+		let (s, s_rem) = self.distr.quantile(cp);
 		if s != self.distr.hi() { self.hi_splits = vec![] }
-		self.distr.truncate(cp, s, s_split, false); // 0
-		self.hi_splits.push(s_split);
+		self.distr.truncate(cp, s, s_rem, false); // 0
+		self.hi_splits.push(s_rem);
 	    }
 	    // 1 last
 	    debug_assert!(self.lo_splits.len() == 1);
 	    let lo_cp = self.lo_splits[0];
-	    let (s, s_split) = self.distr.lookup(lo_cp);
-	    self.distr.truncate(lo_cp, s, s_split, true); // 1
-	    self.lo_splits = vec![s_split];
+	    let (s, s_rem) = self.distr.quantile(lo_cp);
+	    self.distr.truncate(lo_cp, s, s_rem, true); // 1
+	    self.lo_splits = vec![s_rem];
 
 	// case: /1*0/
 	} else {
 	    // 1s first
 	    for cp in mem::take(&mut self.lo_splits) {
-		let (s, s_split) = self.distr.lookup(cp);
+		let (s, s_rem) = self.distr.quantile(cp);
 		if s != self.distr.lo() { self.lo_splits = vec![] }
-		self.distr.truncate(cp, s, s_split, true); // 1
-		self.lo_splits.push(s_split);
+		self.distr.truncate(cp, s, s_rem, true); // 1
+		self.lo_splits.push(s_rem);
 	    }
 	    // 0 last
 	    debug_assert!(self.hi_splits.len() == 1);
 	    let hi_cp = self.hi_splits[0];
-	    let (s, s_split) = self.distr.lookup(hi_cp);
-	    self.distr.truncate(hi_cp, s, s_split, false); // 0
-	    self.hi_splits = vec![s_split];
+	    let (s, s_rem) = self.distr.quantile(hi_cp);
+	    self.distr.truncate(hi_cp, s, s_rem, false); // 0
+	    self.hi_splits = vec![s_rem];
 	}
     }}
 }
