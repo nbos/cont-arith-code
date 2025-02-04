@@ -1,7 +1,4 @@
-An arithmetic encoder-decoder compatible with both discrete and
-continuous probability distributions.
-
-See [documentation](https://nbos.ca/doc/cont_arith_code/).
+[Documentation](https://nbos.ca/doc/cont_arith_code/)
 
 ## How to Use
 
