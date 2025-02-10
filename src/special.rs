@@ -3,7 +3,7 @@ use std::f64::consts::*;
 use libm::expm1;
 use errorfunctions::*;
 
-/// Copied from `scipy/scipy/special/_faddeeva.cxx` which is their
+/// Copied from `scipy/scipy/special/xsf/stats.h` which is their
 /// definition of `logcdf` for `norm` (standard normal):
 ///
 /// "Log of the CDF of the normal distribution for double x.

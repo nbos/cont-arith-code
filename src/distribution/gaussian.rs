@@ -101,7 +101,11 @@ impl Gaussian {
 	self.stdev * self.stdev
     }
 
-    pub fn from_sums(s0: usize, s1: i64, s2: u128, ddof: u8) -> Self {
+    pub fn is_dirac_delta(&self) -> bool {
+	self.s0 == 1
+    }
+
+    fn from_sums(s0: usize, s1: i64, s2: u128, ddof: u8) -> Self {
 	if s0 == 0 {
 	    debug_assert!(s1 == 0 && s2 == 0);
 	    panic!("Empty Gaussian distribution undefined")
@@ -121,10 +125,10 @@ impl Gaussian {
         }
     }
 
-    /// One pass fit of a Gaussian to given data, given the desired
-    /// delta-degree-of-freedom (0 if data is the whole population, 1 if
-    /// data is a sample)
-    pub fn from_values<I>(data: I, ddof: u8) -> Self
+    /// One pass fit (Max Likelihood Estimation) of a Gaussian to given
+    /// data, given the desired delta-degree-of-freedom (0 if data is
+    /// the whole population, 1 if data is a sample)
+    pub fn mle<I>(data: I, ddof: u8) -> Self
     where I: Iterator<Item=i64>
     {
 	let mut s0 = 0usize;
@@ -254,25 +258,28 @@ impl Gaussian {
 
 impl UnivariateDistribution for Gaussian {
     fn truncated(&self) -> Box<dyn TruncatedDistribution> {
-	let gaussian = self.clone().translate(0.5); // see NOTE below
-	let lo = i64::MIN;
-	let one = 0.0; // log(1)
-	let zero = f64::NEG_INFINITY;
-	let mut bins = // new() trims 0 and 2 off
-	    TruncatedCategorical::new(vec![one]);
-	bins.ln_ps = vec![zero,one,zero];
-	let hi = i64::MAX;
+	let gaussian = self.clone().translate(0.5);
+	// we're moving the distribution 0.5 to the right so that
+	// half-points between integers align at integer boundaries,
+	// makes the logic easier (see NOTE below)
+
+	let mut bins = TruncatedCategorical::new(vec![0.0]);
+	// new() trims 0 and 2 off, so we have to:
+	bins.ln_ps = vec![f64::NEG_INFINITY,
+			  0.0,
+			  f64::NEG_INFINITY];
+	let lo;
+	let hi;
+	if self.is_dirac_delta() {
+	    lo = self.s1; // (already resolved)
+	    hi = self.s1;
+	} else { // bounds at infinity
+	    lo = i64::MIN;
+	    hi = i64::MAX;
+	}
+
 	let ln_prob = 0.0; // log(1);
 	Box::new(TruncatedGaussian{ gaussian, lo, bins, hi, ln_prob })
-    }
-}
-
-impl Model<i64> for Gaussian {
-    fn push(&mut self, s: i64) -> Option<i64> {
-	Some(s)
-    }
-    fn next_distr(&mut self) -> Box<dyn UnivariateDistribution> {
-	Box::new(*self)
     }
 }
 
@@ -297,8 +304,8 @@ impl TruncatedDistribution for TruncatedGaussian {
 	let (case, case_split) = self.bins.quantile(cp);
 	if      case == 0 { (self.lo, case_split) }
 	else if case == 2 { (self.hi, case_split) }
-	else { // mid
-	    assert!(case == 1);
+	else { // midle bin
+	    debug_assert!(case == 1);
 	    let lo = (self.lo + 1) as f64;
 	    let hi = self.hi as f64;
 	    let lerp = self.gaussian.lerp(lo,hi,case_split);
@@ -310,7 +317,9 @@ impl TruncatedDistribution for TruncatedGaussian {
 		&& s < self.hi;
 
 	    if !progress && cp == 0.5 {
+		eprintln!("Failed to progress on a half split");
 		// (ran out of precision) assume locally uniform
+		// TODO: lerp in the log-domain instead since it's flatter?
 		let delta = self.hi - (self.lo + 1);
 		debug_assert!(delta > 0); // by case
 		let inc = case_split * delta as f64;
@@ -419,4 +428,83 @@ pub fn floor_rem(x: f64) -> (i64,f64) {
     let x_int = x_floor as i64;
     if x.is_finite() { (x_int, ((x - x_floor))) }
     else { (x_int,(0.0)) }
+}
+
+////////////////////////////// MODELS //////////////////////////////
+
+impl Model<i64> for Gaussian {
+    fn push(&mut self, s: i64) -> Option<i64> {
+	Some(s)
+    }
+    fn next_distr(&mut self) -> Box<dyn UnivariateDistribution> {
+	Box::new(*self)
+    }
+}
+
+#[derive(Debug,Clone,PartialEq,PartialOrd)]
+/// Static (non-optimal) Gaussian model of a set of integers
+pub struct WithReplacement {
+    pub count: usize,
+    pub vec: Vec<i64>,
+    pub distr: Gaussian
+}
+
+impl WithReplacement {
+    /// Construction from a set of values
+    pub fn mle<I>(values: I) -> Self where I: Iterator<Item=i64> {
+	let vec = Vec::new();
+	let distr = Gaussian::mle(values, 0);
+	let count = distr.s0;
+	WithReplacement{ count, vec, distr }
+    }
+}
+
+impl Model<Vec<i64>> for WithReplacement {
+    fn push(&mut self, x: i64) -> Option<Vec<i64>> {
+	self.vec.push(x);
+	self.count -= 1;
+	if self.count == 0 { Some(std::mem::take(&mut self.vec)) }
+	else { None }
+    }
+    fn next_distr(&mut self) -> Box<dyn UnivariateDistribution> {
+	Box::new(self.distr.clone())
+    }
+}
+
+#[derive(Debug,Clone,PartialEq,PartialOrd)]
+/// Updating (optimal) Gaussian model of a set of integers
+pub struct WithoutReplacement {
+    pub vec: Vec<i64>,
+    pub distr: Gaussian // contains count as s0
+}
+
+impl WithoutReplacement {
+    /// Construction from a set of values
+    pub fn mle<I>(values: I) -> Self where I: Iterator<Item=i64> {
+	WithoutReplacement{ vec: Vec::new(),
+			    distr: Gaussian::mle(values, 0) }
+    }
+
+    pub fn count(&self) -> usize {
+	self.distr.s0
+    }
+}
+
+impl Model<Vec<i64>> for WithoutReplacement {
+    fn push(&mut self, x: i64) -> Option<Vec<i64>> {
+	self.vec.push(x);
+
+	// update
+	let s0 = self.distr.s0 - 1;
+	let s1 = self.distr.s1 - x;
+	let x128 = x.abs() as u128;
+	let s2 = self.distr.s2 - x128*x128;
+	self.distr = Gaussian::from_sums(s0,s1,s2,0);
+
+	if s0 == 0 { Some(std::mem::take(&mut self.vec)) }
+	else { None }
+    }
+    fn next_distr(&mut self) -> Box<dyn UnivariateDistribution> {
+	Box::new(self.distr.clone())
+    }
 }

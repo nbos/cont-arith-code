@@ -17,6 +17,52 @@ pub trait Model<T> {
     fn next_distr(&mut self) -> Box<dyn UnivariateDistribution>;
 }
 
+/// A single sample from a distribution
+pub struct Sample<D,T> {
+    pub distr: D,
+    pub resolve: Box<dyn FnMut(Index) -> T>
+}
+
+impl<D: UnivariateDistribution + Clone + 'static,
+     T> Model<T> for Sample<D,T> {
+    fn push(&mut self, s: Index) -> Option<T> {
+	Some((self.resolve)(s)) // always produce
+    }
+    fn next_distr(&mut self) -> Box<dyn UnivariateDistribution> {
+	Box::new(self.distr.clone())
+    }
+}
+
+/// A vector of values from a distribution. MLE for best results. The
+/// model is static and therefore not optimal (values don't get removed
+/// from the distribution, so like a bag "with replacement")
+pub struct Samples<D,T> {
+    pub count: usize,
+    pub vec: Vec<T>,
+    pub sampl: Sample<D,T>
+}
+
+impl<D,T> Samples<D,T> {
+    /// Construction
+    pub fn repeatedly(sampl: Sample<D,T>, count: usize) -> Self {
+	Samples{ count, vec: Vec::new(), sampl }
+    }
+}
+
+impl<D: UnivariateDistribution + Clone + 'static,
+     T> Model<Vec<T>> for Samples<D,T> {
+    fn push(&mut self, s: Index) -> Option<Vec<T>> {
+	let val = (self.sampl.resolve)(s); // always produces
+	self.vec.push(val);
+	self.count -= 1;
+	if self.count == 0 { Some(std::mem::take(&mut self.vec)) }
+	else { None }
+    }
+    fn next_distr(&mut self) -> Box<dyn UnivariateDistribution> {
+	Box::new(self.sampl.distr.clone())
+    }
+}
+
 /// A pair of models can model a pair of values.
 // TODO: other tuples?
 impl<A: Model<T>, T,
@@ -95,7 +141,8 @@ impl<'a> Encoder<'a> {
 		    let tdistr = udistr.truncated();
 		    model.push(s); // update
 		    (s,tdistr)
-		})
+		}) // filtering out resolved covers 0 info case
+		    .filter(|(_,tdistr)| !tdistr.is_resolved())
 	    )
 	}
     }
@@ -134,9 +181,9 @@ impl<'a> Iterator for Encoder<'a> {
 	let bit = res.unwrap_or(cp < 0.5); // None iff end of data
 
 	// split distributions on the stack
-	for (target, mut cat, cp, s, s_rem) in stack {
-	    cat.truncate(cp, s, s_rem, bit);
-	    if !cat.is_resolved() { self.head.push((target,cat)) }
+	for (target, mut distr, cp, s, s_rem) in stack {
+	    distr.truncate(cp, s, s_rem, bit);
+	    if !distr.is_resolved() { self.head.push((target,distr)) }
 	}
 
 	// append distributions that weren't reached
