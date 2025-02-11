@@ -101,10 +101,6 @@ impl Gaussian {
 	self.stdev * self.stdev
     }
 
-    pub fn is_dirac_delta(&self) -> bool {
-	self.s0 == 1
-    }
-
     fn from_sums(s0: usize, s1: i64, s2: u128, ddof: u8) -> Self {
 	if s0 == 0 {
 	    debug_assert!(s1 == 0 && s2 == 0);
@@ -226,15 +222,14 @@ impl Gaussian {
     /// PDF of the gaussian between two points. Does the computation in
     /// log-scale so we're numerically stable in the tails
     pub fn lerp(&self, lo: f64, hi: f64, cp: f64) -> f64 {
-	if self.stdev > 0.0 { // not degenerate
+	if self.stdev <= 0.0 {
+	    self.mean
+	} else { // not degenerate
 	    let precision = self.stdev.recip();
 	    let lo_z = (lo - self.mean) * precision;
 	    let hi_z = (hi - self.mean) * precision;
 	    let res_z = lerp(lo_z,hi_z,cp);
 	    res_z * self.stdev + self.mean
-	} else {
-	    debug_assert!(lo <= self.mean && hi >= self.mean);
-	    self.mean
 	}
     }
 
@@ -270,7 +265,7 @@ impl UnivariateDistribution for Gaussian {
 			  f64::NEG_INFINITY];
 	let lo;
 	let hi;
-	if self.is_dirac_delta() {
+	if self.stdev <= 0.0 {
 	    lo = self.s1; // (already resolved)
 	    hi = self.s1;
 	} else { // bounds at infinity
@@ -301,6 +296,14 @@ pub struct TruncatedGaussian {
 // would expect, etc.
 impl TruncatedDistribution for TruncatedGaussian {
     fn quantile(&self, cp: f64) -> (i64, f64) {
+
+	// degen case:
+	if self.gaussian.stdev <= 0.0 {
+	    let s = self.gaussian.mean.floor();
+	    return (s as i64, self.gaussian.mean - s)
+	}
+
+	// normal case:
 	let (case, case_split) = self.bins.quantile(cp);
 	if      case == 0 { (self.lo, case_split) }
 	else if case == 2 { (self.hi, case_split) }
@@ -317,7 +320,7 @@ impl TruncatedDistribution for TruncatedGaussian {
 		&& s < self.hi;
 
 	    if !progress && cp == 0.5 {
-		eprintln!("Failed to progress on a half split");
+		eprintln!("\x1b[31mFailed to progress on a half split\x1b[0m");
 		// (ran out of precision) assume locally uniform
 		// TODO: lerp in the log-domain instead since it's flatter?
 		let delta = self.hi - (self.lo + 1);
@@ -499,10 +502,14 @@ impl Model<Vec<i64>> for WithoutReplacement {
 	let s1 = self.distr.s1 - x;
 	let x128 = x.abs() as u128;
 	let s2 = self.distr.s2 - x128*x128;
-	self.distr = Gaussian::from_sums(s0,s1,s2,0);
 
-	if s0 == 0 { Some(std::mem::take(&mut self.vec)) }
-	else { None }
+	if s0 == 0 {
+	    Some(std::mem::take(&mut self.vec)) // finished
+	}
+	else {
+	    self.distr = Gaussian::from_sums(s0,s1,s2,0);
+	    None
+	}
     }
     fn next_distr(&mut self) -> Box<dyn UnivariateDistribution> {
 	Box::new(self.distr.clone())

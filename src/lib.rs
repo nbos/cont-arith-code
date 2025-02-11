@@ -2,6 +2,7 @@ mod map;
 mod special;
 pub mod distribution;
 
+use std::fmt::Debug;
 use std::mem;
 use std::io::{self,Write};
 use std::iter::Iterator;
@@ -88,7 +89,7 @@ impl<A: Model<T>, T,
 }
 
 /// A univariate distribution that can be truncated.
-pub trait UnivariateDistribution {
+pub trait UnivariateDistribution: Debug {
     fn truncated(&self) -> Box<dyn TruncatedDistribution>;
 }
 
@@ -97,7 +98,7 @@ pub type Index = i64;
 
 /// A univariate distribution with a truncated probability mass between
 /// a lower- and upper-bound.
-pub trait TruncatedDistribution {
+pub trait TruncatedDistribution: Debug {
     /// Quantile (inverse CDF) and decompose of the remaining
     /// probability mass. Returns whole index (i64) and remainder (f64
     /// $\in$ [0-1]) whose sum has the given cummulative probability in
@@ -141,8 +142,8 @@ impl<'a> Encoder<'a> {
 		    let tdistr = udistr.truncated();
 		    model.push(s); // update
 		    (s,tdistr)
-		}) // filtering out resolved covers 0 info case
-		    .filter(|(_,tdistr)| !tdistr.is_resolved())
+		}) // filtering out resolved for 0 info special case
+		   .filter(|(_,tdistr)| !tdistr.is_resolved()) // (hacky)
 	    )
 	}
     }
@@ -154,7 +155,7 @@ impl<'a> Iterator for Encoder<'a> {
 
 	let mut stack = Vec::new(); // recursive call stack
 	let mut cp = 0.5; // a bit will split the distribution in half
-	let mut res = None;
+	let mut res_bit = None;
 
 	let mut head_iter = mem::take(&mut self.head).into_iter();
 	while let Some((target, distr)) =
@@ -164,11 +165,11 @@ impl<'a> Iterator for Encoder<'a> {
 	    stack.push((target, distr, cp, s, s_rem));
 
 	    if s != target {
-		res = Some(target > s); // 0:false :: 1:true
+		res_bit = Some(target > s); // 0:false :: 1:true
 		break
 
 	    } else if s_rem == 0.0 { // edge case
-		res = Some(true);
+		res_bit = Some(true);
 		break
 
 	    } else {
@@ -178,7 +179,7 @@ impl<'a> Iterator for Encoder<'a> {
 	}
 
 	if stack.is_empty() { return None } // end
-	let bit = res.unwrap_or(cp < 0.5); // None iff end of data
+	let bit = res_bit.unwrap_or(cp < 0.5); // None iff end of data
 
 	// split distributions on the stack
 	for (target, mut distr, cp, s, s_rem) in stack {

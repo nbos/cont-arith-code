@@ -103,7 +103,7 @@ impl<T> Categorical<T> {
     }
 }
 
-impl<T> UnivariateDistribution for Categorical<T> {
+impl<T: Debug> UnivariateDistribution for Categorical<T> {
     fn truncated(&self) -> Box<dyn TruncatedDistribution> {
        Box::new(
            TruncatedCategorical{
@@ -117,7 +117,7 @@ impl<T> UnivariateDistribution for Categorical<T> {
 }
 
 
-impl<T: Clone + Ord + 'static> Model<T> for Categorical<T> {
+impl<T: Clone + Ord + Debug + 'static> Model<T> for Categorical<T> {
     fn push(&mut self, s: i64) -> Option<T> {
 	Some(self.get_key(s as usize).clone())
     }
