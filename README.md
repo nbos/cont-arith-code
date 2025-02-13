@@ -50,6 +50,13 @@ pub trait TruncatedDistribution {
 }
 ```
 
+Care must be taken when implementing for `TruncatedDistribution`, as the
+code length will only be as *optimal* as the modeling of its probability
+mass is *precise*, in particular with `quantile` and
+`truncate`. Moreover, the algorithm will loop if the most informative
+splits (i.e. at `cp = 0.5`) produce no significant progress in the
+probability mass.
+
 Included are implementations for
 [`Categorical<T>`](https://nbos.ca/doc/cont_arith_code/distribution/categorical/index.html)
 distributions on domain `T` with per-symbol frequencies/probabilities
@@ -58,9 +65,5 @@ and
 distributions on domain `i64`, where each integer gets a bin with a
 $\pm$`0.5: f64` width around it.
 
-Care must be taken when implementing for `TruncatedDistribution`, as the
-code length will only be as *optimal* as the modeling of its probability
-mass is *precise*, in particular with `quantile` and
-`truncate`. Moreover, the algorithm will loop if the most informative
-splits (i.e. at `cp = 0.5`) produce no significant progress in the
-probability mass.
+The optimality of code lengths for data-sets encoded with Gaussians
+varies (`cargo run` to see) but decoding is consistently successful.

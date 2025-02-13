@@ -184,16 +184,16 @@ impl TruncatedCategorical {
 }
 
 impl TruncatedDistribution for TruncatedCategorical {
-    /// Given a cummulative probability [0-1], return the category/bin
-    /// in which it falls (intervals are inclusive of lower-bound,
-    /// exclusive of upper-bount, i.e. `[lo,hi)`). Cummulative
+    /// Given a cumulative probability [0-1), return the category/bin in
+    /// which it falls (intervals are inclusive of lower-bound,
+    /// exclusive of upper-bount, i.e. `[lo,hi)`). Cumulative
     /// probability is counted from self.lo_split (our zero) up to
     /// self.hi_split (our one). Returns the index of the bin and where
-    /// (as a ratio) the cummulative probability falls within that
+    /// (as a ratio) the cumulative probability falls within that
     /// bin. Ratio on lo and hi bounds are counted relative to their
     /// respective prior split.
     fn quantile(&self, cp: f64) -> (i64, f64) {
-	// compute cummulative probabilities
+	// compute cumulative probabilities
 	let ps = self.ln_ps.iter()
 	    .map(|lp| (lp.exp())) // lin space
 	    .collect::<Vec<_>>();

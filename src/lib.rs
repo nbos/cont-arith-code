@@ -110,7 +110,7 @@ pub trait TruncatedDistribution: Debug {
     /// w.r.t. `cp` inside each `s`.
     fn quantile(&self, cp: f64) -> (Index, f64); // returns (s, s_rem)
     /// Split the remaining probability mass with the given bit
-    /// (false:0:left :: true:1:right) at the given cummulative
+    /// (false:0:left :: true:1:right) at the given cumulative
     /// probability, which we already know splits at index `s` with
     /// remainder `s_rem`.
     fn truncate(&mut self, cp: f64, s: Index, s_rem: f64, bit: bool);
