@@ -6,6 +6,7 @@ use std::fmt::Debug;
 use std::mem;
 use std::io::{self,Write};
 use std::iter::Iterator;
+use std::cmp::Ordering;
 
 /// Models produce distributions and consume their resolutions (as
 /// `i64`s) until a value `T` pops out. Used by both Encoder and Decoder
@@ -16,6 +17,36 @@ pub trait Model<T> {
     fn push(&mut self, s: Index) -> Option<T>;
     /// Retrieve the next distribution from the model.
     fn next_distr(&mut self) -> Box<dyn UnivariateDistribution>;
+}
+
+/// A pair of models can model a pair of values.
+// TODO: other tuples?
+impl<A: Model<T>, T,
+     B: Model<U>, U> Model<(T,U)> for (Option<T>,(A,B)) {
+    fn push(&mut self, s: Index) -> Option<(T,U)> {
+	match self.0 {
+	    None => {
+		self.0 = self.1.0.push(s);
+		None
+	    }
+	    Some(_) => {
+		let u = self.1.1.push(s)?;
+		Some((std::mem::take(&mut self.0).unwrap(), u))
+	    }
+	}
+    }
+    fn next_distr(&mut self) -> Box<dyn UnivariateDistribution> {
+	match self.0 {
+	    None    => self.1.0.next_distr(),
+	    Some(_) => self.1.1.next_distr()
+	}
+    }
+}
+
+/// A univariate distribution that can be truncated.
+pub trait UnivariateDistribution: Debug {
+    fn truncated(&self) -> Box<dyn TruncatedDistribution>;
+    // fn info(&self, s: Index) -> f64;
 }
 
 /// A single sample from a distribution
@@ -64,35 +95,6 @@ impl<D: UnivariateDistribution + Clone + 'static,
     }
 }
 
-/// A pair of models can model a pair of values.
-// TODO: other tuples?
-impl<A: Model<T>, T,
-     B: Model<U>, U> Model<(T,U)> for (Option<T>,(A,B)) {
-    fn push(&mut self, s: Index) -> Option<(T,U)> {
-	match self.0 {
-	    None => {
-		self.0 = self.1.0.push(s);
-		None
-	    }
-	    Some(_) => {
-		let u = self.1.1.push(s)?;
-		Some((std::mem::take(&mut self.0).unwrap(), u))
-	    }
-	}
-    }
-    fn next_distr(&mut self) -> Box<dyn UnivariateDistribution> {
-	match self.0 {
-	    None    => self.1.0.next_distr(),
-	    Some(_) => self.1.1.next_distr()
-	}
-    }
-}
-
-/// A univariate distribution that can be truncated.
-pub trait UnivariateDistribution: Debug {
-    fn truncated(&self) -> Box<dyn TruncatedDistribution>;
-}
-
 /// Bins of a univariate distribution are indexed by `i64`s
 pub type Index = i64;
 
@@ -100,9 +102,12 @@ pub type Index = i64;
 /// a lower- and upper-bound.
 pub trait TruncatedDistribution: Debug {
     /// Quantile (inverse CDF) and decompose of the remaining
-    /// probability mass. Returns whole index (i64) and remainder (f64
-    /// $\in$ [0-1]) whose sum has the given cummulative probability in
-    /// the truncated CDF.
+    /// probability mass. Given `cp` $\in$ [0-1), returns the symbol
+    /// index (`s: i64`) in which it falls as well as the fraction
+    /// (`s_rem: f64` $\in$ [0-1)) achieved towards symbol `s+1` in the
+    /// cumulative probability assigned to `s`. Indexes must increase
+    /// monotonically w.r.t. `cp`, and `s_rem` must increase linearly
+    /// w.r.t. `cp` inside each `s`.
     fn quantile(&self, cp: f64) -> (Index, f64); // returns (s, s_rem)
     /// Split the remaining probability mass with the given bit
     /// (false:0:left :: true:1:right) at the given cummulative
@@ -139,6 +144,8 @@ impl<'a> Encoder<'a> {
 	    tail: Box::new(
 		atoms.map(move |s| {
 		    let udistr = model.next_distr();
+		    // println!("{:.2} bits for {} in {:?}",
+		    // 	     udistr.info(s), s, udistr);
 		    let tdistr = udistr.truncated();
 		    model.push(s); // update
 		    (s,tdistr)
@@ -155,31 +162,53 @@ impl<'a> Iterator for Encoder<'a> {
 
 	let mut stack = Vec::new(); // recursive call stack
 	let mut cp = 0.5; // a bit will split the distribution in half
-	let mut res_bit = None;
+	let mut mbit = None;
 
 	let mut head_iter = mem::take(&mut self.head).into_iter();
 	while let Some((target, distr)) =
 	    head_iter.next().or_else(|| self.tail.next()) // chain head + tail
 	{
+	    // compute cursor position
 	    let (s, s_rem) = distr.quantile(cp);
 	    stack.push((target, distr, cp, s, s_rem));
 
-	    if s != target {
-		res_bit = Some(target > s); // 0:false :: 1:true
-		break
+	    match s.cmp(&target) {
+		Ordering::Less => {
+		    mbit = Some(true); // 1
+		    break
+		}
 
-	    } else if s_rem == 0.0 { // edge case
-		res_bit = Some(true);
-		break
+		Ordering::Equal => {
+		    if s_rem > 0.0 {
+			// next cp is where cp falls within s/target
+			cp = s_rem;
+			// bit not determined, check w/ next distr
+			continue
 
-	    } else {
-		cp = s_rem; // next cp is where cp falls within s/target
-		// continue
+		    } else { // edge case
+			debug_assert!(s_rem == 0.0);
+			mbit = Some(true); // 1
+			break
+		    }
+		}
+
+		Ordering::Greater => {
+		    mbit = Some(false); // 0
+		    break
+		}
 	    }
 	}
 
 	if stack.is_empty() { return None } // end
-	let bit = res_bit.unwrap_or(cp < 0.5); // None iff end of data
+	let bit = mbit.unwrap_or(
+	    // case: the cursor fell all the way to the end though all
+	    // the remaining symbols in their distributions and we have
+	    // to select the largest interval between left/right
+
+	    // if cp is the correct projection of s_rem's through all
+	    // distributions, then it's just
+	    cp < 0.5
+	);
 
 	// split distributions on the stack
 	for (target, mut distr, cp, s, s_rem) in stack {

@@ -101,6 +101,11 @@ impl<T> Categorical<T> {
 	    .map(|(_,r)| *r)
 	    .unwrap_or(f64::NEG_INFINITY)
     }
+
+    // fn info(&self, s: Index) -> f64 {
+    // 	let res = -self.map.0[s as usize].1.1 / std::f64::consts::LN_2;
+    // 	if res == 0.0 { 0.0 } else { res } // -0.0
+    // }
 }
 
 impl<T: Debug> UnivariateDistribution for Categorical<T> {
@@ -128,10 +133,21 @@ impl<T: Clone + Ord + Debug + 'static> Model<T> for Categorical<T> {
 
 ////////////////////////////// TRUNCATED //////////////////////////////
 
-#[derive(Debug,Clone,PartialEq,PartialOrd)]
+#[derive(Clone,PartialEq,PartialOrd)]
 pub struct TruncatedCategorical {
     lo: usize,
     pub ln_ps: Vec<f64>, // vector of log-probabilities
+}
+
+impl std::fmt::Debug for TruncatedCategorical {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "TruncatedCategorical {{ lo: {}, ln_ps: {:?} }}",
+            self.lo,
+            self.ln_ps
+        )
+    }
 }
 
 impl TruncatedCategorical {

@@ -39,6 +39,7 @@ pub fn log_probability(mut lo: f64, mut hi: f64) -> f64 {
 				 special::log_ndtr(hi));
     if lp > f64::NEG_INFINITY { lp }
     else { // ran out of precision
+	eprintln!("\x1b[31mRan out of precision on Gaussian tail\x1b[0m");
 	// linear approximation (assume locally uniform)
 	let lpd = log_pdf((lo + hi) * 0.5); // take PD at midpoint
 	let ln_delta = (hi - lo).ln();
@@ -79,7 +80,7 @@ pub fn lerp(lo: f64, hi: f64, cp: f64) -> f64 {
 
 ////////////////////////////// PARAMETRIZED //////////////////////////////
 
-#[derive(Debug,Copy,Clone,PartialEq,PartialOrd)]
+#[derive(Copy,Clone,PartialEq,PartialOrd)]
 /// Numerically stable Gaussian distribution
 pub struct Gaussian {
     /// Number of values
@@ -94,6 +95,16 @@ pub struct Gaussian {
     pub mean: f64,
     /// `sqrt( (s2 - (s1^2)/s0) / s0 - ddof )`
     pub stdev: f64
+}
+
+impl std::fmt::Debug for Gaussian {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Gaussian {{ μ: {}, σ: {} }} ({}, {}, {})",
+            self.mean, self.stdev, self.s0, self.s1, self.s2
+        )
+    }
 }
 
 impl Gaussian {
@@ -186,7 +197,7 @@ impl Gaussian {
 	    let lo_z = (lo - self.mean) * precision;
 	    let hi_z = (hi - self.mean) * precision;
 	    log_probability(lo_z,hi_z)
-	} else if lo < self.mean && hi >= self.mean {
+	} else if lo <= self.mean && hi >= self.mean {
 	    0.0 // log(1)
 	} else {
 	    f64::NEG_INFINITY // log(0)
@@ -249,17 +260,21 @@ impl Gaussian {
 	g.mean += d;
 	g
     }
+
+    /// Count the information (bits) of a given index in the Gaussian,
+    /// i.e. the log-probability of the +/-0.5 interval around an
+    /// integer, in base 2
+    pub fn bits(&self, s: Index) -> f64 {
+	let res = -self.log_probability(s as f64 - 0.5, s as f64 + 0.5)
+	    / std::f64::consts::LN_2;
+	if res == 0.0 { 0.0 } else { res } // -0.0
+    }
 }
 
 impl UnivariateDistribution for Gaussian {
     fn truncated(&self) -> Box<dyn TruncatedDistribution> {
-	let gaussian = self.clone().translate(0.5);
-	// we're moving the distribution 0.5 to the right so that
-	// half-points between integers align at integer boundaries,
-	// makes the logic easier (see NOTE below)
-
 	let mut bins = TruncatedCategorical::new(vec![0.0]);
-	// new() trims 0 and 2 off, so we have to:
+	// new() trims 0 and 2 off, so we have to manually:
 	bins.ln_ps = vec![f64::NEG_INFINITY,
 			  0.0,
 			  f64::NEG_INFINITY];
@@ -274,45 +289,48 @@ impl UnivariateDistribution for Gaussian {
 	}
 
 	let ln_prob = 0.0; // log(1);
-	Box::new(TruncatedGaussian{ gaussian, lo, bins, hi, ln_prob })
+	Box::new(TruncatedGaussian{ gaussian: self.clone(),
+				    lo, bins, hi, ln_prob })
     }
 }
 
 #[derive(Debug,Clone,PartialEq,PartialOrd)]
 pub struct TruncatedGaussian {
-    pub gaussian: Gaussian, // prior distribution over the numbers (see NOTE)
-    pub lo: i64, // floored lower-bound
+    pub gaussian: Gaussian, // prior distribution over the numbers
+    pub lo: i64, // integer nearest to lower-bound
     pub bins: TruncatedCategorical, // [lo_crem, mid, hi_rem] cat. distr.
-    pub hi: i64, // floored upper-bound
+    pub hi: i64, // integer nearest to upper-bound
     pub ln_prob: f64, // log-probability of all bins
 }
 
-// NOTE: For the whole implementation of truncated_gaussian, the bins
-// are the widths of whole numbers so [0.0, 1.0), [1.0, 2.0), etc. Since
-// this disagrees with how we fit a gaussian to values (we would have to
-// add 0.5 to each value of the sample to get a mle), we add 0.5 to the
-// mean whenever converting into a truncated_gaussian, so gaussians fit
-// as you would expect and we can call gaussian::log_probability as you
-// would expect, etc.
 impl TruncatedDistribution for TruncatedGaussian {
     fn quantile(&self, cp: f64) -> (i64, f64) {
 
 	// degen case:
 	if self.gaussian.stdev <= 0.0 {
-	    let s = self.gaussian.mean.floor();
-	    return (s as i64, self.gaussian.mean - s)
+	    return (self.gaussian.mean.round() as i64, 0.5)
 	}
 
 	// normal case:
-	let (case, case_split) = self.bins.quantile(cp);
-	if      case == 0 { (self.lo, case_split) }
-	else if case == 2 { (self.hi, case_split) }
+	let (case, case_cp) = self.bins.quantile(cp);
+	if      case == 0 { (self.lo, case_cp) }
+	else if case == 2 { (self.hi, case_cp) }
 	else { // midle bin
 	    debug_assert!(case == 1);
-	    let lo = (self.lo + 1) as f64;
-	    let hi = self.hi as f64;
-	    let lerp = self.gaussian.lerp(lo,hi,case_split);
-	    let (mut s, mut s_rem) = floor_rem(lerp);
+	    let lo = self.lo as f64 + 0.5;
+	    let hi = self.hi as f64 - 0.5;
+	    let lerp = self.gaussian.lerp(lo,hi,case_cp);
+	    let s_f64 = lerp.round();
+	    let s_lo = s_f64 - 0.5;
+	    let s = s_f64 as i64;
+
+	    let s_case_cp = (self.gaussian.log_probability(lo,s_lo)
+			     // normalize like case_cp is:
+			     + self.bins.ln_ps[1]).exp();
+
+	    debug_assert!(s_case_cp <= case_cp);
+	    let s_rem = case_cp - s_case_cp;
+	    debug_assert!(0.0 <= s_rem && s_rem < 1.0);
 
 	    let progress =
 		( s > self.lo + 1 || (s == self.lo + 1
@@ -321,14 +339,15 @@ impl TruncatedDistribution for TruncatedGaussian {
 
 	    if !progress && cp == 0.5 {
 		eprintln!("\x1b[31mFailed to progress on a half split\x1b[0m");
-		// (ran out of precision) assume locally uniform
-		// TODO: lerp in the log-domain instead since it's flatter?
-		let delta = self.hi - (self.lo + 1);
-		debug_assert!(delta > 0); // by case
-		let inc = case_split * delta as f64;
-		let inc_floor = inc.floor();
-		s = self.lo + 1 + inc_floor as i64;
-		s_rem = inc - inc_floor;
+		// // (ran out of precision) assume locally uniform
+		// // TODO: lerp in the log-domain instead since it's flatter?
+		// let delta = self.hi - (self.lo + 1);
+		// debug_assert!(delta > 0); // by case
+		// let inc = case_split * delta as f64;
+		// let inc_floor = inc.floor();
+		// s = self.lo + 1 + inc_floor as i64;
+		// s_rem = inc - inc_floor;
+		unimplemented!()
 	    }
 
 	    (s, s_rem)
@@ -336,7 +355,8 @@ impl TruncatedDistribution for TruncatedGaussian {
     }
 
     fn truncate(&mut self, cp: f64, s: i64, s_rem: f64, bit: bool) {
-	if s == self.lo { // lo
+	// case lo:
+	if s == self.lo {
 	    if bit {
 		self.bins.ln_ps[0] += (1.0 - s_rem).ln();
 		self.bins.normalize();
@@ -348,6 +368,7 @@ impl TruncatedDistribution for TruncatedGaussian {
 		self.bins.ln_ps[2] = f64::NEG_INFINITY;
 	    }
 
+	// case hi:
 	} else if s == self.hi { // hi
 	    if bit { // solved
 		self.lo = self.hi;
@@ -361,18 +382,13 @@ impl TruncatedDistribution for TruncatedGaussian {
 		self.bins.normalize();
 	    }
 
-	    // FIXME: case is broken when precision is 52
-	} else { // mid
+	// case mid:
+	} else {
 	    debug_assert!(self.lo < s && s < self.hi);
-	    let s_lo = s as f64;
-	    let s_hi = (s + 1) as f64;
-	    // TODO: ideally we would have an integer version of
-	    // log_probability so we don't lose the delta by converting
-	    // to floats (e.g. mean is very high) but the largest ints
-	    // we model are 52 bits long and 2^51 just fits in an f64
-	    //
-	    // (we might actually be able to get away with a single call
-	    // to log_pdf, and give up the whole definite integral thing)
+
+	    // FIXME: doing this in floats is lazy but
+	    let s_lo = s as f64 - 0.5;
+	    let s_hi = s as f64 + 0.5;
 	    let s_lp = if s_lo != s_hi {
 		self.gaussian.log_probability(s_lo, s_hi)
 	    } else {
@@ -406,10 +422,10 @@ impl TruncatedDistribution for TruncatedGaussian {
 	    let mid_bin = if self.lo + 1 == self.hi {
 		f64::NEG_INFINITY
 	    } else {
-		let lop1 = (self.lo + 1) as f64;
-		let hi = self.hi as f64;
+		let lo = self.lo as f64 + 0.5;
+		let hi = self.hi as f64 - 0.5;
 		let mut mid_lp =
-		    self.gaussian.log_probability(lop1,hi);
+		    self.gaussian.log_probability(lo,hi);
 		mid_lp -= self.ln_prob; // re-base
 		mid_lp
 	    };
