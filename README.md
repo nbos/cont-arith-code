@@ -65,5 +65,7 @@ and
 distributions on domain `i64`, where each integer gets a bin with a
 $\pm$`0.5: f64` width around it.
 
-The optimality of code lengths for data-sets encoded with Gaussians
-varies (`cargo run` to see) but decoding is consistently successful.
+The optimality of code lengths for integer datasets encoded with
+`Gaussian` varies, but is consistently within either a few bits (for
+small sets) or a few percents (for large sets) of the theoretical
+best. Run `cargo run` to see.

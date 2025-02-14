@@ -12,10 +12,10 @@ use std::cmp::Ordering;
 /// `i64`s) until a value `T` pops out. Used by both Encoder and Decoder
 /// symmetrically.
 pub trait Model<T> {
-    /// Push a value into the model and updates its state.
-    /// Returns an optional result based on the model's internal logic.
+    /// Push a value into the model and updates its state. Returns a
+    /// values once it's been fully described by a series of indexes.
     fn push(&mut self, s: Index) -> Option<T>;
-    /// Retrieve the next distribution from the model.
+    /// Get the distribution for the next symbol from the model.
     fn next_distr(&mut self) -> Box<dyn UnivariateDistribution>;
 }
 
@@ -46,7 +46,6 @@ impl<A: Model<T>, T,
 /// A univariate distribution that can be truncated.
 pub trait UnivariateDistribution: Debug {
     fn truncated(&self) -> Box<dyn TruncatedDistribution>;
-    // fn info(&self, s: Index) -> f64;
 }
 
 /// A single sample from a distribution
@@ -209,6 +208,7 @@ impl<'a> Iterator for Encoder<'a> {
 	    // distributions, then it's just
 	    cp < 0.5
 	);
+
 
 	// split distributions on the stack
 	for (target, mut distr, cp, s, s_rem) in stack {

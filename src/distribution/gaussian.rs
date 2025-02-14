@@ -303,6 +303,25 @@ pub struct TruncatedGaussian {
     pub ln_prob: f64, // log-probability of all bins
 }
 
+impl TruncatedGaussian {
+    /// Count the information (bits) of a given index in the truncated
+    /// Gaussian, i.e. the log-probability of the +/-0.5 interval around
+    /// an integer, in base 2
+    pub fn bits(&self, s: Index) -> f64 {
+	let ln2 = std::f64::consts::LN_2;
+	if s < self.lo { f64::INFINITY }
+	else if s == self.lo { -self.bins.ln_ps[0] / ln2 }
+	else if s == self.hi { -self.bins.ln_ps[2] / ln2 }
+	else if s > self.hi { f64::INFINITY }
+	else {
+	    let s_lo = s as f64 - 0.5;
+	    let s_hi = s as f64 + 0.5;
+	    -(self.gaussian.log_probability(s_lo,s_hi)
+	      - self.ln_prob) / ln2
+	}
+    }
+}
+
 impl TruncatedDistribution for TruncatedGaussian {
     fn quantile(&self, cp: f64) -> (i64, f64) {
 
@@ -360,12 +379,16 @@ impl TruncatedDistribution for TruncatedGaussian {
 	    if bit {
 		self.bins.ln_ps[0] += (1.0 - s_rem).ln();
 		self.bins.normalize();
+		let lccp = (1.0 - cp).ln();
+		self.ln_prob += lccp;
 	    } else { // solved
 		self.hi = self.lo;
 		// [1,0,0] but could be [0,0,1]:
 		self.bins.ln_ps[0] = 0.0;
 		self.bins.ln_ps[1] = f64::NEG_INFINITY;
 		self.bins.ln_ps[2] = f64::NEG_INFINITY;
+		let lcp = cp.ln();
+		self.ln_prob += lcp;
 	    }
 
 	// case hi:
@@ -376,10 +399,13 @@ impl TruncatedDistribution for TruncatedGaussian {
 		self.bins.ln_ps[0] = f64::NEG_INFINITY;
 		self.bins.ln_ps[1] = f64::NEG_INFINITY;
 		self.bins.ln_ps[2] = 0.0;
-
+		let lccp = (1.0 - cp).ln();
+		self.ln_prob += lccp;
 	    } else {
 		self.bins.ln_ps[2] += s_rem.ln();
 		self.bins.normalize();
+		let lcp = cp.ln();
+		self.ln_prob += lcp;
 	    }
 
 	// case mid:
