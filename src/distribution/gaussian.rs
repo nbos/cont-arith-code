@@ -280,9 +280,10 @@ impl UnivariateDistribution for Gaussian {
 			  f64::NEG_INFINITY];
 	let lo;
 	let hi;
-	if self.stdev <= 0.0 {
-	    lo = self.s1; // (already resolved)
-	    hi = self.s1;
+	if self.stdev <= 0.0 { // (already resolved)
+	    let s = self.mean.round() as i64;
+	    lo = s;
+	    hi = s;
 	} else { // bounds at infinity
 	    lo = i64::MIN;
 	    hi = i64::MAX;

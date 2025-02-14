@@ -285,7 +285,7 @@ where
 
     /// Run the decoder
     pub fn decode(&mut self) -> T { loop {
-	// 1) RESOLVE DISTRIBUTRION:
+	// resolve distribution
 
 	// consume bits, split distribution until resolved
 	let half = 0.5;
@@ -308,15 +308,17 @@ where
 	    self.distr.truncate(half, s, s_rem, self.last_bit);
 	}
 
-	// resolved
-	let target = self.distr.lo();
-	if let Some(res) = self.model.push(target) {
-	    return res // finished
+	// resolved: push index, summon new distribution
+	while self.distr.is_resolved() {
+	    let target = self.distr.lo();
+	    if let Some(res) = self.model.push(target) {
+		return res // finished
+	    }
+	    let udistr = self.model.next_distr();
+	    self.distr = udistr.truncated();
 	}
 
-	// 2) SUMMON NEW DISTR; APPLY SPLIT HISTORY:
-	let udistr = self.model.next_distr();
-	self.distr = udistr.truncated();
+	// apply split history:
 
 	// case: /0*1/
 	if self.last_bit {

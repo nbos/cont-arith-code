@@ -8,8 +8,9 @@ fn main() {
 }
 
 fn _gen_data() {
-    for i in 1..100 {
-	let xs = [vec![0;i-1],vec![1i64]].concat();
+    for i in 1..101 {
+	// let xs = _sample_uniform(i,-5,5);
+	let xs = _sample_normal(i,0.0,2.8867);
 	let mle = g::WithReplacement::mle(xs.iter().copied());
 
 	let mut bits = 0.0f64;
@@ -36,6 +37,7 @@ fn _demo() {
     let sets: Vec<Vec<i64>> = vec![
 	vec![0],
 	vec![1],
+	vec![8,8,8,8,8,8,8,8,8,8,8,8],
 	vec![-1,1],
 	vec![-1234,1234],
 	vec![1,0,-1],
@@ -43,19 +45,19 @@ fn _demo() {
 	vec![0,0,0,1],
 	vec![0,0,0,0,1],
 
-	[vec![0;10], vec![1]].concat(),
-	[vec![0;20], vec![1]].concat(),
-	[vec![0;40], vec![1]].concat(),
-	[vec![0;80], vec![1]].concat(),
+	[vec![0;9], vec![1]].concat(),
+	[vec![0;19], vec![1]].concat(),
+	[vec![0;39], vec![1]].concat(),
+	[vec![0;79], vec![1]].concat(),
 
-	[vec![0;200], vec![1]].concat(),
-	[vec![1], vec![0;200]].concat(),
-	[vec![0;100], vec![123], vec![0;100]].concat(),
+	[vec![0;199], vec![1]].concat(),
+	[vec![1], vec![0;199]].concat(),
+	[vec![0;99], vec![123], vec![0;100]].concat(),
 
-	_sample_uniform(3,-5e3,5e3),
-	_sample_uniform(10,-5e3,5e3),
-	_sample_uniform(100,-5e3,5e3),
-	_sample_uniform(1000,-5e3,5e3),
+	_sample_uniform(3,-500,500),
+	_sample_uniform(10,-500,500),
+	_sample_uniform(100,-500,500),
+	// _sample_uniform(1000,-500,500),
     ];
 
     for xs in sets { _test(&xs) }
@@ -82,10 +84,10 @@ fn _test(xs: &[i64]) {
 	bitss.push(info);
 	g.push(x);
     }
-    println!("Information Content: {}", bits);
-    println!("Expected code length: {}", bits.ceil());
-    println!("Information Contributions: [{}]",
-	     bitss.iter().map(|h| format!("{:.3}",h))
+    println!("Information Content: {} bits", bits);
+    println!("Expected code length: {} bits", bits.ceil());
+    println!("Information Contributions (bits): [{}]",
+	     bitss.iter().map(|h| format!("{:.2}",h))
 	     .collect::<Vec<String>>().join(", "));
 
     // encode
@@ -94,7 +96,7 @@ fn _test(xs: &[i64]) {
     let codestring = code.iter()
 	.map(|b| if *b {'1'} else {'0'})
 	.collect::<String>();
-    println!("Code: {}", codestring);
+    println!("Code: \'{}\'", codestring);
     println!("Code length: {} bits", code.len());
 
     // report stats
@@ -123,7 +125,7 @@ fn _test(xs: &[i64]) {
 	print!("\x1b[31m"); // red
     }
 
-    println!("({:+.1}%)\x1b[m compared to estimate", relative);
+    println!("({:+.1}%)\x1b[m compared to expected", relative);
 
     // decode
     let decoded = Decoder::new(mle.clone(),
@@ -139,17 +141,19 @@ fn _test(xs: &[i64]) {
     println!();
 }
 
-/// Generates a random vector of `i64` values.
-///
-/// # Arguments:
-/// * `size` - The number of random elements to generate.
-/// * `min` - The minimum value for the random range (inclusive).
-/// * `max` - The maximum value for the random range (inclusive).
-///
-/// # Returns:
-/// A `Vec<i64>` containing the random values.
-fn _sample_uniform(size: usize, min: f64, max: f64) -> Vec<i64> {
+fn _sample_uniform(size: usize, min: i64, max: i64) -> Vec<i64> {
     let mut rng = rng();
-    (0..size).map(|_| rng.random_range(min..=max) as i64)
+    (0..size).map(|_| rng.random_range(min..=max))
+        .collect()
+}
+
+fn _sample_normal(size: usize, mean: f64, std_dev: f64) -> Vec<i64> {
+    let mut rng = rng(); // Create a random number generator
+    (0..size)
+        .map(|_| {
+            let u: f64 = rng.random();
+            let z = crate::distribution::gaussian::quantile(u);
+            (mean + z * std_dev).round() as i64
+        })
         .collect()
 }
