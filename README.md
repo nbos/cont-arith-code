@@ -1,6 +1,17 @@
+An arithmetic codec for data modeled by discrete and/or continuous
+probability distributions. Given data and a probabilistic model for that
+data, this algorithm will produce a nearly optimal binary serialization
+of the data and decode that serialization back into the original
+data. An abstract interface is provided with implementation for
+Categorical and Gaussian distributions.
+
+The code has not been tested/optimized for speed.
+
+[Blogpost](https://nbos.ca/gauss.html) (motivation, design, results)
+
 [Documentation](https://nbos.ca/doc/cont_arith_code/)
 
-## How to Use
+## Interface
 
 For a given value`:T`, you provide a Model (magenta) against which the
 value you want to encode decomposes into a stream of symbols indexed by
