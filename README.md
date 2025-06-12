@@ -1,13 +1,12 @@
-An arithmetic codec for data modeled by discrete and/or continuous
-probability distributions. Given data and a probabilistic model for that
-data, this algorithm will produce a nearly optimal binary serialization
-of the data and decode that serialization back into the original
-data. An abstract interface is provided with implementation for
-Categorical and Gaussian distributions.
-
-The code has not been tested/optimized for speed.
-
 [Blogpost](https://nbos.ca/gauss.html) (motivation, design, results)
+
+Given data and a probabilistic model for that data, this algorithm
+produces a close to optimal binary serialization of the data and decodes
+that serialization back into the original data. An abstract interface is
+defined with implementations for Categorical and Gaussian distributions.
+
+The code was not tested for speed whatsoever, although the algorithm and
+data structures should be asymptotically optimal.
 
 [Documentation](https://nbos.ca/doc/cont_arith_code/)
 
@@ -19,7 +18,7 @@ $s_0,s_1,s_2,...$`:i64` inside Distributions (green) which the model
 produces. The model is updated by the index of the previous symbol
 before being called to generate the next distribution.
 
-![](https://nbos.ca/images/interface.png)
+![](https://nbos.ca/res/gauss/interface.png)
 
 In practice, you implement for your model the
 [trait](https://nbos.ca/doc/cont_arith_code/trait.Model.html)
