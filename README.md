@@ -8,7 +8,7 @@ defined with implementations for Categorical and Gaussian distributions.
 The code was not tested for speed whatsoever, although the algorithm and
 data structures should be asymptotically optimal.
 
-[Documentation](https://nbos.ca/doc/cont_arith_code/)
+[Documentation](https://nbos.ca/res/doc/cont_arith_code/)
 
 ## Interface
 
@@ -21,7 +21,7 @@ before being called to generate the next distribution.
 ![](https://nbos.ca/res/gauss/interface.png)
 
 In practice, you implement for your model the
-[trait](https://nbos.ca/doc/cont_arith_code/trait.Model.html)
+[trait](https://nbos.ca/res/doc/cont_arith_code/trait.Model.html)
 
 ```Rust
 type Index = i64;
@@ -32,7 +32,7 @@ pub trait Model<T> {
 ```
 
 where
-[`UnivariateDistribution`](https://nbos.ca/doc/cont_arith_code/trait.UnivariateDistribution.html)
+[`UnivariateDistribution`](https://nbos.ca/res/doc/cont_arith_code/trait.UnivariateDistribution.html)
 is
 
 ```Rust
@@ -42,7 +42,7 @@ pub trait UnivariateDistribution {
 ```
 
 and
-[`TruncatedDistribution`](https://nbos.ca/doc/cont_arith_code/trait.TruncatedDistribution.html)
+[`TruncatedDistribution`](https://nbos.ca/res/doc/cont_arith_code/trait.TruncatedDistribution.html)
 is any distribution with a [quantile
 function](https://en.wikipedia.org/wiki/Quantile_function) that returns
 a bin's index (with remainder) for any cumulative probability `cp: f64`
@@ -68,10 +68,10 @@ splits (i.e. at `cp = 0.5`) produce no significant progress in the
 probability mass.
 
 Included are implementations for
-[`Categorical<T>`](https://nbos.ca/doc/cont_arith_code/distribution/categorical/index.html)
+[`Categorical<T>`](https://nbos.ca/res/doc/cont_arith_code/distribution/categorical/index.html)
 distributions on domain `T` with per-symbol frequencies/probabilities
 and
-[`Gaussian`](https://nbos.ca/doc/cont_arith_code/distribution/gaussian/index.html)
+[`Gaussian`](https://nbos.ca/res/doc/cont_arith_code/distribution/gaussian/index.html)
 distributions on domain `i64`, where each integer gets a bin with a
 $\pm$`0.5: f64` width around it.
 
